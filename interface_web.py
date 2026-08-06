@@ -20,7 +20,7 @@ import model_config
 import prompts
 
 PORT = int(os.environ.get("VIDEO_RESUMIDOR_PORT", "8765"))
-UI_VERSION = 7
+UI_VERSION = 8
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(os.environ.get("TEMP", "/tmp"), "video-resumidor-uploads")
 HISTORY_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "video-resumidor")
@@ -491,7 +491,7 @@ HTML = """<!DOCTYPE html>
       justify-content: center;
       padding: 24px;
     }
-    .layout { width: min(760px, 100%); }
+    .layout { width: 100%; max-width: 1400px; }
     .card {
       background: #1a1d27;
       border: 1px solid #2d3142;
@@ -793,7 +793,27 @@ HTML = """<!DOCTYPE html>
       flex-shrink: 0;
       transition: background .2s;
     }
-    .model-item .model-delete:hover { background: #3d1a1a; }
+    .compare-card {
+      flex: 1 1 320px;
+      min-width: 280px;
+      max-width: 480px;
+      background: #0a0c12;
+      border-radius: 10px;
+      padding: 16px;
+      border: 1px solid #2d3142;
+    }
+    .compare-card.error { border-color: #5c2a2a; }
+    .compare-card strong { display: block; margin-bottom: 10px; font-size: .95rem; }
+    .compare-card pre {
+      white-space: pre-wrap;
+      font-size: .78rem;
+      line-height: 1.5;
+      color: #b8c0d4;
+      max-height: 550px;
+      overflow-y: auto;
+      margin: 0;
+      font-family: inherit;
+    }
   </style>
 </head>
 <body>
@@ -863,7 +883,7 @@ HTML = """<!DOCTYPE html>
       <div id="compare-section" style="display:none;margin-top:24px">
         <h3>🔬 Comparação de modelos</h3>
         <div id="compare-progress" class="chat-hint" style="color:#7ddea2;min-height:1.2em"></div>
-        <div id="compare-grid" style="display:flex;gap:16px;overflow-x:auto;padding-bottom:8px"></div>
+        <div id="compare-grid" style="display:flex;flex-wrap:wrap;gap:16px;padding-bottom:8px"></div>
       </div>
 
       <div id="compare-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
@@ -1934,15 +1954,14 @@ HTML = """<!DOCTYPE html>
 
         // Render grid
         compareGrid.innerHTML = items.map((item) => {
-          const w = Math.max(280, Math.floor(100 / Math.max(1, items.length || 1))) + "px";
           if (item.error) {
-            return '<div style="min-width:' + w + ';flex:1;background:#0a0c12;border-radius:8px;padding:12px;border:1px solid #5c2a2a">' +
-              '<strong style="color:#ff7b7b">' + item.model + '</strong>' +
-              '<p style="color:#ff7b7b;font-size:.85rem;margin-top:8px">Erro: ' + item.error + '</p></div>';
+            return '<div class="compare-card error">' +
+              '<strong style="color:#ff7b7b">❌ ' + item.model + '</strong>' +
+              '<p style="color:#ff7b7b;font-size:.85rem">Erro: ' + item.error + '</p></div>';
           }
-          return '<div style="min-width:' + w + ';flex:1;background:#0a0c12;border-radius:8px;padding:12px;border:1px solid #2d3142">' +
-            '<strong style="color:#6c8cff">' + item.model + '</strong>' +
-            '<pre style="white-space:pre-wrap;font-size:.75rem;line-height:1.45;margin-top:8px;color:#b8c0d4;max-height:400px;overflow-y:auto">' + (item.summary || "(aguardando...)") + '</pre></div>';
+          return '<div class="compare-card">' +
+            '<strong style="color:#6c8cff">🧠 ' + item.model + '</strong>' +
+            '<pre>' + (item.summary || "(aguardando...)") + '</pre></div>';
         }).join('');
 
         if (prog.indexOf("Concluido") === 0) {
