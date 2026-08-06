@@ -261,13 +261,14 @@ def add_history_summary(history_id, model, path, created_at=None):
     entry = find_history_entry(entries, history_id)
     if not entry:
         return
+    preset = prompts.get_active_preset()
     summary_entry = {
         "model": model,
         "path": path,
         "created_at": created_at or now_iso(),
-        "preset": prompts.get_active_preset(),
+        "preset": preset,
     }
-    summaries = [s for s in entry.get("summaries", []) if s.get("model") != model]
+    summaries = [s for s in entry.get("summaries", []) if s.get("model") != model or s.get("preset", "") != preset]
     summaries.append(summary_entry)
     entry["summaries"] = summaries
     entries.remove(entry)
@@ -355,15 +356,17 @@ def run_summarize_job(model):
             )
 
         created_at = now_iso()
+        preset = prompts.get_active_preset()
         summary_entry = {
             "model": model,
             "path": model_path,
             "text": summary,
             "created_at": created_at,
+            "preset": preset,
         }
 
         with job_lock:
-            summaries = [s for s in job.get("summaries", []) if s.get("model") != model]
+            summaries = [s for s in job.get("summaries", []) if s.get("model") != model or s.get("preset", "") != preset]
             summaries.append(summary_entry)
             job["summaries"] = summaries
             job["summary"] = summary
@@ -410,7 +413,7 @@ def run_compare_job(models):
                     "preset": preset,
                 })
                 # Também adiciona ao dropdown "Resumos gerados"
-                summaries = [s for s in job.get("summaries", []) if s.get("model") != model]
+                summaries = [s for s in job.get("summaries", []) if s.get("model") != model or s.get("preset", "") != preset]
                 summaries.append({
                     "model": model,
                     "path": model_path,
