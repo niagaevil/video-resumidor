@@ -461,6 +461,16 @@ def restore_job_from_history(history_id):
         resumo_path = latest.get("path", "")
         model = latest.get("model", "")
 
+    # Reconstroi compare a partir dos summaries carregados do disco
+    compare = []
+    for s in summaries:
+        compare.append({
+            "model": s.get("model", ""),
+            "summary": s.get("text", ""),
+            "error": None,
+        })
+    compare_progress = "Carregado do histórico" if compare else ""
+
     video_name = entry.get("video_name", "video")
     download_base = os.path.splitext(video_name)[0] or "video"
     video_path = entry.get("video_path", "")
@@ -483,6 +493,8 @@ def restore_job_from_history(history_id):
             "chat": [],
             "chat_busy": False,
             "error": "",
+            "compare": compare,
+            "compare_progress": compare_progress,
         })
 
     return True, None
@@ -1099,6 +1111,26 @@ HTML = """<!DOCTYPE html>
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
+    function renderCompare(items, progressText) {
+      const compareSection = document.getElementById("compare-section");
+      const compareGrid = document.getElementById("compare-grid");
+      const compareProgress = document.getElementById("compare-progress");
+      if (!compareSection || !compareGrid || !compareProgress) return;
+      if (!items || !items.length) return;
+      compareSection.style.display = "block";
+      compareProgress.textContent = progressText || "";
+      compareGrid.innerHTML = items.map((item) => {
+        if (item.error) {
+          return '<div class="compare-card error">' +
+            '<strong style="color:#ff7b7b">❌ ' + item.model + '</strong>' +
+            '<p style="color:#ff7b7b;font-size:.85rem">Erro: ' + item.error + '</p></div>';
+        }
+        return '<div class="compare-card">' +
+          '<strong style="color:#6c8cff">🧠 ' + item.model + '</strong>' +
+          '<pre>' + (item.summary || "(aguardando...)") + '</pre></div>';
+      }).join('');
+    }
+
     function applyStatus(data) {
       const status = data.status;
       const base = data.download_base || "video";
@@ -1138,6 +1170,7 @@ HTML = """<!DOCTYPE html>
         setDownloadLink(dlResumo, true, base + "_resumo.txt");
         renderSummaries(data.summaries || [], data.model);
         renderChat(data.chat || []);
+        renderCompare(data.compare || [], data.compare_progress || "");
         resetBtn.style.display = "inline-block";
         resummarizeBtn.style.display = "inline-block";
         resummarizeBtn.disabled = !modelSelect.value;
@@ -1961,23 +1994,8 @@ HTML = """<!DOCTYPE html>
       comparePolling = setInterval(async () => {
         const s = await fetch("/api/status");
         const d = await s.json();
-        const items = d.compare || [];
-        const prog = d.compare_progress || "";
-        compareProgress.textContent = prog;
-
-        // Render grid
-        compareGrid.innerHTML = items.map((item) => {
-          if (item.error) {
-            return '<div class="compare-card error">' +
-              '<strong style="color:#ff7b7b">❌ ' + item.model + '</strong>' +
-              '<p style="color:#ff7b7b;font-size:.85rem">Erro: ' + item.error + '</p></div>';
-          }
-          return '<div class="compare-card">' +
-            '<strong style="color:#6c8cff">🧠 ' + item.model + '</strong>' +
-            '<pre>' + (item.summary || "(aguardando...)") + '</pre></div>';
-        }).join('');
-
-        if (prog.indexOf("Concluido") === 0) {
+        renderCompare(d.compare || [], d.compare_progress || "");
+        if ((d.compare_progress || "").indexOf("Concluido") === 0 || (d.compare_progress || "").indexOf("Carregado") === 0) {
           clearInterval(comparePolling);
           comparePolling = null;
         }
