@@ -737,9 +737,9 @@ HTML = """<!DOCTYPE html>
   <div class="layout">
     <div class="tabs">
       <div class="tab active" data-tab="process">🎬 Processar</div>
-      <div class="tab" data-tab="prompts">📝 Prompts</div>
-      <div class="tab" data-tab="models">🧠 Modelos</div>
       <div class="tab" data-tab="history">📋 Histórico</div>
+      <div class="tab" data-tab="models">🧠 Modelos</div>
+      <div class="tab" data-tab="prompts">📝 Prompts</div>
     </div>
     <div class="tab-panel active" id="panel-process">
     <div class="card">
