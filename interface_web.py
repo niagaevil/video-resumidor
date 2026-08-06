@@ -382,6 +382,7 @@ def run_compare_job(models):
         transcription = job["transcription"]
         video_path = job.get("video_path") or ""
         download_base = job.get("download_base", "video")
+        history_id = job.get("history_id", "")
         job["compare"] = []
         job["compare_progress"] = f"0/{len(models)}"
 
@@ -392,13 +393,27 @@ def run_compare_job(models):
             with capture_progress_log() as vr:
                 vr.OLLAMA_URL = vr.resolve_ollama_url("local")
                 base = video_path or os.path.join(UPLOAD_DIR, download_base)
-                summary, _, _ = vr.summarize_transcription(transcription, model, base)
+                summary, _, model_path = vr.summarize_transcription(transcription, model, base)
+            created_at = now_iso()
             with job_lock:
                 job["compare"].append({
                     "model": model,
                     "summary": summary,
                     "error": None,
                 })
+                # Também adiciona ao dropdown "Resumos gerados"
+                summaries = [s for s in job.get("summaries", []) if s.get("model") != model]
+                summaries.append({
+                    "model": model,
+                    "path": model_path,
+                    "text": summary,
+                    "created_at": created_at,
+                })
+                job["summaries"] = summaries
+                job["summary"] = summary
+                job["model"] = model
+            if history_id:
+                add_history_summary(history_id, model, model_path, created_at)
         except Exception as exc:
             with job_lock:
                 job["compare"].append({
@@ -411,6 +426,7 @@ def run_compare_job(models):
         done = len(job["compare"])
         errors = sum(1 for c in job["compare"] if c["error"])
         job["compare_progress"] = f"Concluido: {done - errors}/{done} com sucesso"
+        job["status"] = "done"
 
 
 def run_full_job(video_path, model, download_base, video_name):
