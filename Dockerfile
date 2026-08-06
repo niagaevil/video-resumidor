@@ -25,7 +25,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Scripts e configs
-COPY video_resumidor.py interface_web.py prompts.py prompts.json model_config.py VERSION ./
+COPY video_resumidor.py interface_web.py prompts.py prompts.json model_config.py hardware_detect.py VERSION ./
 
 # Pasta de vídeos (montada pelo usuário no run)
 VOLUME ["/videos"]

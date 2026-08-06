@@ -100,7 +100,7 @@ mkdir -p "$INSTALL_DIR"
 # ─────────────────────────────────────────
 # ARQUIVOS COMUNS
 # ─────────────────────────────────────────
-for f in video_resumidor.py interface_web.py prompts.py prompts.json model_config.py requirements.txt VERSION; do
+for f in video_resumidor.py interface_web.py prompts.py prompts.json model_config.py hardware_detect.py requirements.txt VERSION; do
     [ -f "$SCRIPT_DIR/$f" ] || erro "Arquivo não encontrado: $SCRIPT_DIR/$f"
     cp "$SCRIPT_DIR/$f" "$INSTALL_DIR/$f"
 done

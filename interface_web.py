@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 
 import requests
 
+import hardware_detect
 import model_config
 import prompts
 
@@ -65,6 +66,67 @@ def ollama_models():
         except Exception:
             continue
     return []
+
+
+def ollama_models_detail():
+    """Lista modelos com detalhes (nome, tamanho, data)."""
+    try:
+        r = requests.get("http://localhost:11434/api/tags", timeout=5)
+        r.raise_for_status()
+        models = r.json().get("models", [])
+        bad = ("embed", "vision", "clip")
+        result = []
+        for m in models:
+            name = m.get("name", "")
+            if any(b in name for b in bad):
+                continue
+            size_bytes = m.get("size", 0)
+            if size_bytes >= 1_000_000_000:
+                size_str = f"{size_bytes / 1_000_000_000:.1f} GB"
+            elif size_bytes >= 1_000_000:
+                size_str = f"{size_bytes / 1_000_000:.0f} MB"
+            else:
+                size_str = f"{size_bytes / 1_000:.0f} KB"
+            result.append({
+                "name": name,
+                "size_bytes": size_bytes,
+                "size": size_str,
+                "modified_at": m.get("modified_at", ""),
+            })
+        return result
+    except Exception:
+        return []
+
+
+def ollama_delete_model(model_name):
+    """Deleta um modelo do Ollama."""
+    try:
+        r = requests.delete(
+            "http://localhost:11434/api/delete",
+            json={"model": model_name},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
+def ollama_pull_model(model_name):
+    """Inicia pull de um modelo (roda em thread separada)."""
+    import threading as thr
+    def _pull():
+        try:
+            r = requests.post(
+                "http://localhost:11434/api/pull",
+                json={"model": model_name, "stream": False},
+                timeout=1800,
+            )
+            r.raise_for_status()
+        except Exception:
+            pass
+    thr.Thread(target=_pull, daemon=True).start()
+    return True
 
 
 def append_log(line):
@@ -642,6 +704,33 @@ HTML = """<!DOCTYPE html>
       margin-right: 4px;
       color: #7ddea2;
     }
+    .model-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #12151f;
+      border: 1px solid #2d3142;
+      border-radius: 10px;
+      margin-bottom: 8px;
+    }
+    .model-item .model-icon { font-size: 1.3rem; flex-shrink: 0; }
+    .model-item .model-info { flex: 1; min-width: 0; }
+    .model-item .model-name { color: #e8eaed; font-weight: 600; }
+    .model-item .model-meta { color: #9aa0b4; font-size: .8rem; margin-top: 2px; }
+    .model-item .model-delete {
+      padding: 6px 12px;
+      border-radius: 6px;
+      background: transparent;
+      border: 1px solid #5c2a2a;
+      color: #ff7b7b;
+      cursor: pointer;
+      font-size: .8rem;
+      font-weight: 600;
+      flex-shrink: 0;
+      transition: background .2s;
+    }
+    .model-item .model-delete:hover { background: #3d1a1a; }
   </style>
 </head>
 <body>
@@ -649,6 +738,7 @@ HTML = """<!DOCTYPE html>
     <div class="tabs">
       <div class="tab active" data-tab="process">🎬 Processar</div>
       <div class="tab" data-tab="prompts">📝 Prompts</div>
+      <div class="tab" data-tab="models">🧠 Modelos</div>
       <div class="tab" data-tab="history">📋 Histórico</div>
     </div>
     <div class="tab-panel active" id="panel-process">
@@ -731,6 +821,25 @@ HTML = """<!DOCTYPE html>
       </div>
       <div id="prompts-editors"></div>
       <p class="chat-hint" style="margin-top:16px">Dica: os placeholders disponíveis estão listados abaixo de cada campo. Não remova nem renomeie os placeholders entre chaves.</p>
+    </div>
+    </div>
+
+    <div class="tab-panel" id="panel-models">
+    <div class="card" id="models-section">
+      <h1>🧠 Gerenciar Modelos</h1>
+      <p class="sub">Modelos instalados no Ollama. Baixe novos ou remova os que não usa mais.</p>
+
+      <div id="models-list"></div>
+
+      <div style="margin-top:24px;padding-top:20px;border-top:1px solid #2d3142">
+        <h3>Baixar novo modelo</h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="pull-model-input" type="text" placeholder="Ex.: qwen2.5:7b" style="flex:1;min-width:200px;padding:10px 12px;border-radius:8px;border:1px solid #3d4258;background:#12151f;color:#e8eaed">
+          <button type="button" id="pull-model-btn">Baixar</button>
+        </div>
+        <p class="chat-hint" style="margin-top:8px">Digite o nome exato do modelo (ex: qwen2.5:7b, llama3.2:3b, mistral:7b). O download roda em segundo plano.</p>
+        <div id="pull-status" class="chat-hint" style="color:#7ddea2;min-height:1.2em;margin-top:4px"></div>
+      </div>
     </div>
     </div>
 
@@ -1079,6 +1188,9 @@ HTML = """<!DOCTYPE html>
           applyStatus(data);
           if (polling) clearInterval(polling);
           polling = null;
+          // Switch to Processar tab so user sees the results
+          const processTab = document.querySelector('.tab[data-tab="process"]');
+          if (processTab) processTab.click();
         });
       });
 
@@ -1211,6 +1323,7 @@ HTML = """<!DOCTYPE html>
     const tabPanels = {
       process: document.getElementById("panel-process"),
       prompts: document.getElementById("panel-prompts"),
+      models: document.getElementById("panel-models"),
       history: document.getElementById("panel-history"),
     };
     document.querySelectorAll(".tab").forEach((tab) => {
@@ -1221,6 +1334,7 @@ HTML = """<!DOCTYPE html>
         const panel = tabPanels[tab.dataset.tab];
         if (panel) panel.classList.add("active");
         if (tab.dataset.tab === "prompts") loadPromptsEditor();
+        if (tab.dataset.tab === "models") loadModelsTab();
         if (tab.dataset.tab === "history") loadHistory();
       });
     });
@@ -1403,19 +1517,47 @@ HTML = """<!DOCTYPE html>
     }
 
     async function loadModelTiers() {
+      // Detect hardware first
+      let hw = null;
+      try {
+        const hwRes = await fetch("/api/hardware");
+        hw = await hwRes.json();
+      } catch (e) { /* silent */ }
+
       const res = await fetch("/api/model-tiers");
       const data = await res.json();
       const container = document.getElementById("model-tiers");
       if (!container || !data.tiers) return;
-      container.innerHTML = data.tiers.map((t) =>
-        '<div class="tier-row">' +
-        '<span class="tier-icon">' + t.icon + '</span>' +
-        '<div>' +
-        '<span class="tier-label">' + t.label + '</span><br>' +
-        '<span>' + t.description + '</span><br>' +
-        '<span class="tier-models">Modelos: ' + (t.recommended || []).join(', ') + '</span>' +
-        '</div></div>'
-      ).join('');
+
+      const detectedTier = hw ? hw.tier : null;
+      const ramInfo = hw && hw.ram_gb ? hw.ram_gb + ' GB RAM' : '';
+      const gpuInfo = hw && hw.gpus && hw.gpus.length
+        ? hw.gpus[0].name + (hw.total_vram_gb ? ' (' + hw.total_vram_gb + ' GB VRAM)' : '')
+        : 'GPU nao detectada';
+
+      // Header com info do hardware
+      let html = '';
+      if (hw && detectedTier) {
+        html += '<div style="margin-bottom:10px;padding:8px 12px;background:#12151f;border-radius:8px;display:flex;align-items:center;gap:8px">' +
+          '<span style="font-size:1.2rem">🖥️</span>' +
+          '<span style="color:#c8cde0"><strong>Seu PC:</strong> ' + ramInfo +
+          (hw.gpus && hw.gpus.length ? ' • ' + gpuInfo : '') +
+          '</span></div>';
+      }
+
+      html += data.tiers.map((t) => {
+        const isMe = t.id === detectedTier;
+        const badge = isMe ? ' <span style="background:#4f6ef7;color:#fff;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:600">✅ SEU PC</span>' : '';
+        const borderStyle = isMe ? 'border:1px solid #4f6ef7;border-radius:8px;padding:8px;margin:-8px;background:#161b2e' : '';
+        return '<div class="tier-row" style="' + borderStyle + '">' +
+          '<span class="tier-icon">' + t.icon + '</span>' +
+          '<div>' +
+          '<span class="tier-label">' + t.label + badge + '</span><br>' +
+          '<span>' + t.description + '</span><br>' +
+          '<span class="tier-models">Modelos: ' + (t.recommended || []).join(', ') + '</span>' +
+          '</div></div>';
+      }).join('');
+      container.innerHTML = html;
     }
 
     async function updateModelInfo() {
@@ -1433,6 +1575,88 @@ HTML = """<!DOCTYPE html>
           (data.tier ? ' <span style="color:#5c6378">(' + data.tier.icon + ' ' + data.tier.label + ')</span>' : '');
       }
     }
+
+    // ── Models Tab ──
+    async function loadModelsTab() {
+      const container = document.getElementById("models-list");
+      if (!container) return;
+      try {
+        const res = await fetch("/api/models/detail");
+        const data = await res.json();
+        const models = data.models || [];
+        if (!models.length) {
+          container.innerHTML = '<p class="chat-hint">Nenhum modelo instalado. Use o campo abaixo para baixar.</p>';
+          return;
+        }
+        container.innerHTML = models.map((m) =>
+          '<div class="model-item">' +
+          '<span class="model-icon">🧠</span>' +
+          '<div class="model-info">' +
+          '<div class="model-name">' + m.name + '</div>' +
+          '<div class="model-meta">' + m.size +
+          (m.modified_at ? ' • ' + new Date(m.modified_at).toLocaleString("pt-BR") : '') +
+          '</div></div>' +
+          '<button class="model-delete" data-model="' + m.name + '">Remover</button>' +
+          '</div>'
+        ).join('');
+
+        container.querySelectorAll(".model-delete").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const model = btn.dataset.model;
+            if (!confirm("Remover " + model + "? Esta ação não pode ser desfeita.")) return;
+            btn.disabled = true;
+            btn.textContent = "...";
+            const delRes = await fetch("/api/models/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ model: model }),
+            });
+            if (delRes.ok) {
+              showToast("Modelo " + model + " removido!");
+              loadModelsTab();
+              loadModels(); // refresh the main model selector too
+            } else {
+              const err = await delRes.json();
+              showToast("Erro: " + (err.error || "falha ao remover"));
+              btn.disabled = false;
+              btn.textContent = "Remover";
+            }
+          });
+        });
+      } catch (e) {
+        container.innerHTML = '<p class="chat-hint">Erro ao carregar modelos. Ollama está rodando?</p>';
+      }
+    }
+
+    document.getElementById("pull-model-btn").addEventListener("click", async () => {
+      const input = document.getElementById("pull-model-input");
+      const status = document.getElementById("pull-status");
+      const model = input.value.trim();
+      if (!model) {
+        showToast("Digite o nome do modelo.");
+        return;
+      }
+      const btn = document.getElementById("pull-model-btn");
+      btn.disabled = true;
+      btn.textContent = "Baixando...";
+      status.textContent = "Iniciando download de " + model + "...";
+      const res = await fetch("/api/models/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: model }),
+      });
+      if (res.ok) {
+        showToast("Baixando " + model + " em segundo plano. Atualize a lista em alguns minutos.");
+        status.textContent = "✅ Download de " + model + " iniciado! Atualize a lista para ver o progresso.";
+        input.value = "";
+      } else {
+        const err = await res.json();
+        status.textContent = "❌ " + (err.error || "Falha ao iniciar download");
+        showToast("Erro ao baixar modelo.");
+      }
+      btn.disabled = false;
+      btn.textContent = "Baixar";
+    });
 
     loadModels();
     loadPresets();
@@ -1568,6 +1792,18 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, {"presets": presets_list, "active": active})
             return
 
+        if path == "/api/models/detail":
+            self._json(200, {"models": ollama_models_detail()})
+            return
+
+        if path == "/api/hardware":
+            try:
+                hw = hardware_detect.detect_tier()
+                self._json(200, hw)
+            except Exception as exc:
+                self._json(200, {"tier": "unknown", "error": str(exc)})
+            return
+
         if path == "/api/model-tiers":
             tiers = model_config.get_hardware_tiers()
             self._json(200, {"tiers": tiers})
@@ -1663,6 +1899,35 @@ class Handler(BaseHTTPRequestHandler):
 
             threading.Thread(target=run_summarize_job, args=(model,), daemon=True).start()
             self._json(200, {"ok": True})
+            return
+
+        if path == "/api/models/delete":
+            data = self._read_json_body()
+            if data is None:
+                self._json(400, {"error": "JSON inválido"})
+                return
+            model = (data.get("model") or "").strip()
+            if not model:
+                self._json(400, {"error": "Modelo obrigatório"})
+                return
+            ok, err = ollama_delete_model(model)
+            if ok:
+                self._json(200, {"ok": True})
+            else:
+                self._json(500, {"error": err or "Falha ao deletar"})
+            return
+
+        if path == "/api/models/pull":
+            data = self._read_json_body()
+            if data is None:
+                self._json(400, {"error": "JSON inválido"})
+                return
+            model = (data.get("model") or "").strip()
+            if not model:
+                self._json(400, {"error": "Modelo obrigatório"})
+                return
+            ollama_pull_model(model)
+            self._json(200, {"ok": True, "message": f"Baixando {model} em segundo plano..."})
             return
 
         if path == "/api/chat":
