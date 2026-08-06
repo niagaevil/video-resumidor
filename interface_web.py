@@ -1183,7 +1183,7 @@ HTML = """<!DOCTYPE html>
       const info = (presetsData || window._presetsData || []).find((p) => p.id === activeId);
       if (info && !info.builtin) {
         removeBtn.style.display = "inline-block";
-        removeBtn.textContent = "🗑️ Remover \\" + info.label + "\\";
+        removeBtn.textContent = "🗑️ Remover \\"" + info.label + "\\"";
       } else {
         removeBtn.style.display = "none";
       }
@@ -1710,7 +1710,7 @@ HTML = """<!DOCTYPE html>
           // Ativa o novo preset (silencioso para não duplicar toast)
           if (data.id) {
             activatePreset(data.id, "prompts", true);
-            showToast("Novo tipo criado: \\" + label.trim() + "\\"!");
+            showToast("Novo tipo criado: \\"" + label.trim() + "\\""!");
           }
         } else {
           showToast("Erro ao criar tipo: " + (data.error || "desconhecido"));
@@ -1728,7 +1728,7 @@ HTML = """<!DOCTYPE html>
         showToast("Este tipo de reunião é padrão e não pode ser removido.");
         return;
       }
-      if (!confirm("Remover o tipo \\" + info.label + "\\"? Seus prompts personalizados serão perdidos.")) return;
+      if (!confirm("Remover o tipo \\"" + info.label + "\\""? Seus prompts personalizados serão perdidos.")) return;
       try {
         const res = await fetch("/api/presets/remove", {
           method: "POST",
@@ -1741,7 +1741,7 @@ HTML = """<!DOCTYPE html>
           await loadPresets();
           updateRemoveButton(data.active, data.presets);
           loadPromptsEditor();
-          showToast("Tipo \\" + info.label + "\\" removido.");
+          showToast("Tipo \\"" + info.label + "\\"" removido.");
         } else {
           showToast("Erro ao remover tipo: " + (data.error || "desconhecido"));
         }
