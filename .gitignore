@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Freebuff (local dev)
+.freebuff/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Vídeos e áudios (inputs do usuário)
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.wav
+*.mp3
+*.flac
+
+# Arquivos gerados pelo app
+*_transcricao.txt
+*_resumo*.txt
+*_prompt_llm.txt
+
+# Pasta de uploads/videos/temp
+temp/
+videos/
+uploads/
+
+# Manifesto de instalação
+video-resumidor.manifest.json
+
+# Docker
+ollama_data/
+
+# Arquivos de log
+*.log
+
+# Secrets / env local
+.env
+.env.local

@@ -1,0 +1,29 @@
+{
+  "_meta": {
+    "version": 2,
+    "description": "Templates de prompt editáveis para o Video Resumidor. Use {variavel} para placeholders que serão substituídos em runtime."
+  },
+  "active_preset": "general",
+  "presets": {
+    "general": {
+      "label": "Reunião Geral",
+      "icon": "📋"
+    },
+    "standup": {
+      "label": "Daily / Standup",
+      "icon": "☀️"
+    },
+    "retrospective": {
+      "label": "Retrospectiva",
+      "icon": "🔄"
+    },
+    "planning": {
+      "label": "Sprint Planning",
+      "icon": "📐"
+    }
+  },
+  "chunk_prompt": "Você analisa o TRECHO {chunk_num}/{total} de uma transcrição automática de REUNIÃO (podem haver erros de voz).\n\nLinhas no formato [MM:SS] ou [HH:MM:SS] + texto falado. COPIE os timestamps — não invente.\n\nREGRAS:\n- PROIBIDO inventar ou supor informação que não esteja neste trecho\n- Só inclua itens com [timestamp] correspondente na transcrição\n- Responda em português do Brasil, de forma objetiva\n- NÃO escreva despedidas nem comentários sobre ser IA\n\nExtraia SOMENTE deste trecho (use bullets com [timestamp]):\n- Tópicos discutidos\n- Decisões explícitas (se houver)\n- Ações, responsáveis e prazos (só se falados)\n- Pendências ou riscos citados (se houver)\n\nSe uma categoria não aparecer neste trecho, omita-a (não escreva \"não mencionado\").\n\nTRECHO DA TRANSCRIÇÃO:\n{chunk_text}",
+  "merge_prompt": "Você monta o RESUMO FINAL de uma reunião a partir de notas parciais (já extraídas da transcrição).\n\nAs notas abaixo vieram de trechos diferentes da mesma reunião. Cada item já traz [timestamp].\nPROIBIDO inventar informação que não esteja nas notas.\n\nREGRAS:\n- Responda SOMENTE em português do Brasil\n- OBRIGATÓRIO: todo item em lista deve manter [MM:SS] ou [HH:MM:SS] das notas\n- Use EXATAMENTE os títulos de seção abaixo, sem renomear\n- Seja objetivo; NÃO repita a mesma informação em seções diferentes\n- Preserve decisões, ações, responsáveis, prazos, pendências e timestamps; só remova duplicatas claras\n- NÃO escreva despedidas nem comentários sobre você ser uma IA\n- Se uma seção não tiver conteúdo nas notas, escreva: \"Não mencionado na reunião\"\n\nFORMATO (markdown):\n\n## Resumo executivo\n2 a 4 frases apenas com o que foi dito na reunião.\n\n## Tópicos discutidos\n4 a 10 itens: [timestamp] Assunto\n\n## Decisões\nBullets: [timestamp] Decisão — somente acordos explícitos. Senão: \"Não mencionado na reunião\"\n\n## Ações e responsáveis\nFormato: [timestamp] Responsável — ação — prazo (só se nas notas). Senão: \"Não mencionado na reunião\"\n\n## Pendências e riscos\nSó bloqueios, dúvidas ou riscos citados + [timestamp]. Senão: \"Não mencionado na reunião\"\n\n## Próximos passos\nSó o combinado explicitamente + [timestamp]. Senão: \"Não mencionado na reunião\"\n\nNOTAS PARCIAIS DA REUNIÃO:\n{combined_notes}",
+  "single_prompt": "Você analisa REUNIÕES a partir de transcrições automáticas de áudio (podem conter erros de reconhecimento de voz).\n\nA transcrição abaixo tem linhas no formato [MM:SS] ou [HH:MM:SS] seguido do texto falado.\nCOPIE esses timestamps para o resumo — não invente horários.\n\nREGRA MAIS IMPORTANTE — FIDELIDADE À TRANSCRIÇÃO:\n- PROIBIDO inventar, supor ou completar lacunas\n- PROIBIDO criar decisões, ações, prazos, responsáveis, nomes ou conclusões que não estejam na transcrição\n- Só inclua um item se puder apontar o trecho correspondente (use o [timestamp] desse trecho)\n- Na dúvida, OMITA — não chute\n- Paráfrase permitida, mas o sentido deve estar explícito na fala transcrita\n- Corrija apenas erros óbvios de transcrição (nomes/termos); se não tiver certeza, mantenha o original e marque \"(?)\"\n- Se uma seção não tiver conteúdo na transcrição, escreva exatamente: \"Não mencionado na reunião\"\n\nOUTRAS REGRAS:\n- Responda SOMENTE em português do Brasil\n- OBRIGATÓRIO: todo item em lista deve começar com [MM:SS] ou [HH:MM:SS] copiado da transcrição\n- PROIBIDO entregar resumo genérico de \"vídeo\" — é uma reunião transcrita\n- Use EXATAMENTE os títulos de seção abaixo, sem renomear\n- Seja objetivo; NÃO repita a mesma informação em seções diferentes\n- NÃO escreva despedidas nem comentários sobre você ser uma IA\n\nFORMATO (markdown) — exemplo de item correto:\n- [04:12] Definido que o deploy será na sexta\n\n## Resumo executivo\n2 a 4 frases apenas com o que foi dito na reunião.\n\n## Tópicos discutidos\n4 a 10 itens: [timestamp] Assunto (só assuntos realmente falados)\n\n## Decisões\nBullets: [timestamp] Decisão — somente acordos explícitos. Senão: \"Não mencionado na reunião\"\n\n## Ações e responsáveis\nFormato: [timestamp] Responsável — ação — prazo (só se falado). Senão: \"Não mencionado na reunião\"\n\n## Pendências e riscos\nSó bloqueios, dúvidas ou riscos citados + [timestamp]. Senão: \"Não mencionado na reunião\"\n\n## Próximos passos\nSó o combinado explicitamente + [timestamp]. Senão: \"Não mencionado na reunião\"\n\nTRANSCRIÇÃO DA REUNIÃO:\n{transcription_text}\n\nLEMBRETE FINAL: siga o formato acima. Cada bullet precisa de [MM:SS] ou [HH:MM:SS] tirado da transcrição.",
+  "chat_prompt": "Você responde perguntas sobre uma REUNIÃO usando SOMENTE a transcrição abaixo.\n\nREGRAS:\n- PROIBIDO inventar ou supor qualquer informação\n- Se não estiver na transcrição, responda: \"Não foi mencionado na reunião.\"\n- Cite [timestamp] ao referenciar trechos\n- Responda em português do Brasil, de forma objetiva\n\nTRANSCRIÇÃO:\n{transcription_text}\n\nPERGUNTA:\n{question}"
+}
