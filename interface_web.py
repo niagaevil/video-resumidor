@@ -218,11 +218,13 @@ def history_entry_for_api(entry):
         "video_name": entry.get("video_name", ""),
         "created_at": entry.get("created_at", ""),
         "transcricao_path": entry.get("transcricao_path", ""),
+        "preset": entry.get("preset", "general"),
         "summaries": [
             {
                 "model": s.get("model", ""),
                 "path": s.get("path", ""),
                 "created_at": s.get("created_at", ""),
+                "preset": s.get("preset", entry.get("preset", "general")),
             }
             for s in entry.get("summaries", [])
         ],
@@ -232,6 +234,7 @@ def history_entry_for_api(entry):
 def upsert_history_transcription(history_id, video_name, video_path, transcricao_path):
     entries = load_history()
     entry = find_history_entry(entries, history_id)
+    preset = prompts.get_active_preset()
     if not entry:
         entry = {
             "id": history_id,
@@ -240,12 +243,14 @@ def upsert_history_transcription(history_id, video_name, video_path, transcricao
             "created_at": now_iso(),
             "transcricao_path": transcricao_path,
             "summaries": [],
+            "preset": preset,
         }
         entries.insert(0, entry)
     else:
         entry["video_name"] = video_name
         entry["video_path"] = video_path
         entry["transcricao_path"] = transcricao_path
+        entry["preset"] = preset
         entries.remove(entry)
         entries.insert(0, entry)
     save_history(entries)
@@ -260,6 +265,7 @@ def add_history_summary(history_id, model, path, created_at=None):
         "model": model,
         "path": path,
         "created_at": created_at or now_iso(),
+        "preset": prompts.get_active_preset(),
     }
     summaries = [s for s in entry.get("summaries", []) if s.get("model") != model]
     summaries.append(summary_entry)
@@ -395,11 +401,13 @@ def run_compare_job(models):
                 base = video_path or os.path.join(UPLOAD_DIR, download_base)
                 summary, _, model_path = vr.summarize_transcription(transcription, model, base)
             created_at = now_iso()
+            preset = prompts.get_active_preset()
             with job_lock:
                 job["compare"].append({
                     "model": model,
                     "summary": summary,
                     "error": None,
+                    "preset": preset,
                 })
                 # Também adiciona ao dropdown "Resumos gerados"
                 summaries = [s for s in job.get("summaries", []) if s.get("model") != model]
@@ -408,6 +416,7 @@ def run_compare_job(models):
                     "path": model_path,
                     "text": summary,
                     "created_at": created_at,
+                    "preset": preset,
                 })
                 job["summaries"] = summaries
                 job["summary"] = summary
@@ -468,6 +477,7 @@ def restore_job_from_history(history_id):
             "model": s.get("model", ""),
             "summary": s.get("text", ""),
             "error": None,
+            "preset": s.get("preset", entry.get("preset", "general")),
         })
     compare_progress = "Carregado do histórico" if compare else ""
 
@@ -1087,7 +1097,9 @@ HTML = """<!DOCTYPE html>
       currentSummaries.forEach((item, index) => {
         const opt = document.createElement("option");
         opt.value = String(index);
-        opt.textContent = item.model + (item.created_at ? " — " + new Date(item.created_at).toLocaleString("pt-BR") : "");
+        const presetLabel = item.preset ? " [" + item.preset + "]" : "";
+        const dateLabel = item.created_at ? " — " + new Date(item.created_at).toLocaleString("pt-BR") : "";
+        opt.textContent = item.model + presetLabel + dateLabel;
         summaryModelSelect.appendChild(opt);
       });
 
@@ -1122,13 +1134,14 @@ HTML = """<!DOCTYPE html>
       compareSection.style.display = "block";
       compareProgress.textContent = progressText || "";
       compareGrid.innerHTML = items.map((item) => {
+        const presetBadge = item.preset && item.preset !== "general" ? ' <span style="color:#9aa0b4;font-weight:400">[' + item.preset + ']</span>' : "";
         if (item.error) {
           return '<div class="compare-card error">' +
-            '<strong style="color:#ff7b7b">❌ ' + item.model + '</strong>' +
+            '<strong style="color:#ff7b7b">❌ ' + item.model + presetBadge + '</strong>' +
             '<p style="color:#ff7b7b;font-size:.85rem">Erro: ' + item.error + '</p></div>';
         }
         return '<div class="compare-card">' +
-          '<strong style="color:#6c8cff">🧠 ' + item.model + '</strong>' +
+          '<strong style="color:#6c8cff">🧠 ' + item.model + presetBadge + '</strong>' +
           '<pre>' + (item.summary || "(aguardando...)") + '</pre></div>';
       }).join('');
     }
@@ -1339,8 +1352,9 @@ HTML = """<!DOCTYPE html>
         div.className = "history-item";
         const models = (entry.summaries || []).map((s) => s.model).join(", ") || "sem resumo";
         const date = entry.created_at ? new Date(entry.created_at).toLocaleString("pt-BR") : "";
+        const presetBadge = entry.preset && entry.preset !== "general" ? ' <span style="color:#6c8cff;font-size:.8rem">[' + entry.preset + ']</span>' : "";
         div.innerHTML =
-          "<strong>" + entry.video_name + "</strong>" +
+          "<strong>" + entry.video_name + presetBadge + "</strong>" +
           '<div class="meta">' + date + " — " + models + "</div>" +
           '<div class="history-actions">' +
           '<button type="button" class="secondary" data-open="' + entry.id + '">Abrir</button>' +
