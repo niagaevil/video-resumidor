@@ -25,7 +25,7 @@ HARDWARE_TIERS = [
         "label": "PC Medio (16GB RAM, GPU 6-8GB VRAM)",
         "icon": "\U0001f4bb",
         "description": "Modelos 7-8B parametros. Melhor custo-beneficio para sumarizacao.",
-        "recommended": ["qwen2.5:7b", "qwen2.5:7b-instruct", "llama3.1:8b", "mistral:7b"],
+        "recommended": ["qwen2.5:7b", "qwen2.5:7b-instruct", "llama3.1:8b", "deepseek-r1:8b", "mistral:7b"],
         "default_config": {"chunk_chars": 8000, "merge_batch": 4, "num_ctx": 8192, "timeout": 600},
     },
     {
@@ -48,6 +48,7 @@ MODEL_CONFIGS = {
     "mistral:7b":      {"chunk_chars": 7000, "merge_batch": 4, "num_ctx": 8192,  "timeout": 600},
     "llama3.1:8b":     {"chunk_chars": 8000, "merge_batch": 4, "num_ctx": 8192,  "timeout": 600},
     "qwen2.5:7b":      {"chunk_chars": 8000, "merge_batch": 4, "num_ctx": 8192,  "timeout": 600},
+    "deepseek-r1:8b":  {"chunk_chars": 7000, "merge_batch": 3, "num_ctx": 8192,  "timeout": 900},
 
     "phi4:14b":        {"chunk_chars": 10000, "merge_batch": 4, "num_ctx": 16384, "timeout": 600},
     "qwen2.5:14b":     {"chunk_chars": 12000, "merge_batch": 6, "num_ctx": 16384, "timeout": 600},

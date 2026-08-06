@@ -240,7 +240,7 @@ Dentro do container Docker, o modo `docker` é usado automaticamente.
 | Hardware | Modelos recomendados | Tamanho |
 |---|---|---|
 | 🖥️ **Básico** (8GB RAM, sem GPU) | `llama3.2:3b`, `qwen2.5:3b`, `phi3:mini` | ~2 GB |
-| 💻 **Médio** (16GB RAM, 6-8GB VRAM) | `qwen2.5:7b`, `llama3.1:8b`, `mistral:7b` | ~4.7 GB |
+| 💻 **Médio** (16GB RAM, 6-8GB VRAM) | `qwen2.5:7b`, `llama3.1:8b`, `deepseek-r1:8b`, `mistral:7b` | ~4.7 GB |
 | 🚀 **Avançado** (32GB RAM, 12GB+ VRAM) | `qwen2.5:14b`, `phi4:14b` | ~9 GB |
 
 > O app ajusta automaticamente o tamanho dos chunks e o batch de merge conforme o modelo escolhido. Modelos menores recebem chunks menores para evitar que "se percam" no contexto.

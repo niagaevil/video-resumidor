@@ -44,6 +44,8 @@ job = {
     "chat": [],
     "chat_busy": False,
     "error": "",
+    "compare": [],         # resultados de comparacao multi-modelo
+    "compare_progress": "", # status atual da comparacao
 }
 job_lock = threading.Lock()
 history_lock = threading.Lock()
@@ -368,6 +370,46 @@ def run_summarize_job(model):
         with job_lock:
             job["status"] = "transcribed" if job.get("transcription") else "error"
             job["error"] = str(exc)
+
+
+def run_compare_job(models):
+    """Roda summarization em varios modelos sequencialmente."""
+    with job_lock:
+        if not job.get("transcription"):
+            job["compare_progress"] = "Erro: transcricao nao disponivel"
+            return
+        transcription = job["transcription"]
+        video_path = job.get("video_path") or ""
+        download_base = job.get("download_base", "video")
+        job["compare"] = []
+        job["compare_progress"] = f"0/{len(models)}"
+
+    for idx, model in enumerate(models):
+        with job_lock:
+            job["compare_progress"] = f"{idx}/{len(models)} — {model}"
+        try:
+            with capture_progress_log() as vr:
+                vr.OLLAMA_URL = vr.resolve_ollama_url("local")
+                base = video_path or os.path.join(UPLOAD_DIR, download_base)
+                summary, _, _ = vr.summarize_transcription(transcription, model, base)
+            with job_lock:
+                job["compare"].append({
+                    "model": model,
+                    "summary": summary,
+                    "error": None,
+                })
+        except Exception as exc:
+            with job_lock:
+                job["compare"].append({
+                    "model": model,
+                    "summary": "",
+                    "error": str(exc),
+                })
+
+    with job_lock:
+        done = len(job["compare"])
+        errors = sum(1 for c in job["compare"] if c["error"])
+        job["compare_progress"] = f"Concluido: {done - errors}/{done} com sucesso"
 
 
 def run_full_job(video_path, model, download_base, video_name):
@@ -771,6 +813,9 @@ HTML = """<!DOCTYPE html>
         <button type="button" id="resummarize" class="secondary" style="display:none" disabled>
           Gerar resumo com este modelo
         </button>
+        <button type="button" id="compare-btn" class="secondary" style="display:none" disabled>
+          🔬 Comparar modelos
+        </button>
       </div>
       <p class="status-hint" id="status-hint"></p>
 
@@ -793,6 +838,24 @@ HTML = """<!DOCTYPE html>
         <a id="dl-resumo" class="disabled" href="/api/download/resumo" download>Baixar resumo (.txt)</a>
       </div>
       <div class="paths" id="paths">Downloads disponíveis após processar o vídeo.</div>
+
+      <div id="compare-section" style="display:none;margin-top:24px">
+        <h3>🔬 Comparação de modelos</h3>
+        <div id="compare-progress" class="chat-hint" style="color:#7ddea2;min-height:1.2em"></div>
+        <div id="compare-grid" style="display:flex;gap:16px;overflow-x:auto;padding-bottom:8px"></div>
+      </div>
+
+      <div id="compare-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
+        <div style="background:#1a1d27;border:1px solid #3d4258;border-radius:16px;padding:28px;max-width:500px;width:90%">
+          <h3 style="margin:0 0 8px">Selecionar modelos para comparar</h3>
+          <p class="chat-hint">Escolha 2 ou mais modelos. Cada um gerará um resumo da mesma transcrição.</p>
+          <div id="compare-model-list" style="max-height:260px;overflow-y:auto;margin:12px 0"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button type="button" class="secondary" id="compare-cancel">Cancelar</button>
+            <button type="button" id="compare-start">Iniciar comparação</button>
+          </div>
+        </div>
+      </div>
 
       <div id="chat">
         <h3>Perguntas sobre a reunião</h3>
@@ -861,6 +924,7 @@ HTML = """<!DOCTYPE html>
     const fileName = document.getElementById("file-name");
     const startBtn = document.getElementById("start");
     const resummarizeBtn = document.getElementById("resummarize");
+    const compareBtn2 = document.getElementById("compare-btn");
     const statusHint = document.getElementById("status-hint");
     const progress = document.getElementById("progress");
     const logEl = document.getElementById("log");
@@ -928,6 +992,8 @@ HTML = """<!DOCTYPE html>
       resetBtn.style.display = "none";
       resummarizeBtn.style.display = "none";
       resummarizeBtn.disabled = true;
+      if (compareBtn2) compareBtn2.style.display = "none";
+      if (compareSection) compareSection.style.display = "none";
       statusHint.textContent = "";
       transcricaoReady = false;
     }
@@ -994,6 +1060,10 @@ HTML = """<!DOCTYPE html>
         }
         resummarizeBtn.style.display = "inline-block";
         resummarizeBtn.disabled = isBusy(status) || !modelSelect.value;
+        if (compareBtn2) {
+          compareBtn2.style.display = "inline-block";
+          compareBtn2.disabled = isBusy(status);
+        }
 
         if (status === "transcribed") {
           statusHint.textContent = "Transcrição pronta. Gerando resumo…";
@@ -1013,6 +1083,7 @@ HTML = """<!DOCTYPE html>
         resetBtn.style.display = "inline-block";
         resummarizeBtn.style.display = "inline-block";
         resummarizeBtn.disabled = !modelSelect.value;
+        if (compareBtn2) { compareBtn2.style.display = "inline-block"; compareBtn2.disabled = false; }
       } else if (status === "error" || (status === "transcribed" && data.error)) {
         statusHint.textContent = "";
         if (data.error) {
@@ -1020,6 +1091,7 @@ HTML = """<!DOCTYPE html>
         }
         resummarizeBtn.style.display = "inline-block";
         resummarizeBtn.disabled = !modelSelect.value;
+        if (compareBtn2) { compareBtn2.style.display = "inline-block"; compareBtn2.disabled = false; }
       } else if (status === "transcribing") {
         statusHint.textContent = "Transcrevendo vídeo…";
         startBtn.disabled = true;
@@ -1658,6 +1730,83 @@ HTML = """<!DOCTYPE html>
       btn.textContent = "Baixar";
     });
 
+    // ── Compare Models ──
+    const compareBtn = document.getElementById("compare-btn");
+    const compareModal = document.getElementById("compare-modal");
+    const compareSection = document.getElementById("compare-section");
+    const compareGrid = document.getElementById("compare-grid");
+    const compareProgress = document.getElementById("compare-progress");
+    let comparePolling = null;
+
+    compareBtn.addEventListener("click", async () => {
+      // Populate modal with installed models
+      const list = document.getElementById("compare-model-list");
+      const res = await fetch("/api/models");
+      const data = await res.json();
+      list.innerHTML = (data.models || []).map((m) =>
+        '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;color:#c8cde0">' +
+        '<input type="checkbox" value="' + m + '" class="compare-check"> ' + m +
+        '</label>'
+      ).join('');
+      compareModal.style.display = "flex";
+    });
+
+    document.getElementById("compare-cancel").addEventListener("click", () => {
+      compareModal.style.display = "none";
+    });
+
+    document.getElementById("compare-start").addEventListener("click", async () => {
+      const checks = document.querySelectorAll(".compare-check:checked");
+      const models = Array.from(checks).map((c) => c.value);
+      if (models.length < 2) {
+        showToast("Selecione pelo menos 2 modelos.");
+        return;
+      }
+      compareModal.style.display = "none";
+      compareSection.style.display = "block";
+      compareGrid.innerHTML = "";
+      compareProgress.textContent = "Iniciando...";
+
+      const res = await fetch("/api/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ models: models }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        showToast(err.error || "Falha ao iniciar");
+        return;
+      }
+
+      // Poll status for compare progress
+      if (comparePolling) clearInterval(comparePolling);
+      comparePolling = setInterval(async () => {
+        const s = await fetch("/api/status");
+        const d = await s.json();
+        const items = d.compare || [];
+        const prog = d.compare_progress || "";
+        compareProgress.textContent = prog;
+
+        // Render grid
+        compareGrid.innerHTML = items.map((item) => {
+          const w = Math.max(280, Math.floor(100 / Math.max(1, items.length || 1))) + "px";
+          if (item.error) {
+            return '<div style="min-width:' + w + ';flex:1;background:#0a0c12;border-radius:8px;padding:12px;border:1px solid #5c2a2a">' +
+              '<strong style="color:#ff7b7b">' + item.model + '</strong>' +
+              '<p style="color:#ff7b7b;font-size:.85rem;margin-top:8px">Erro: ' + item.error + '</p></div>';
+          }
+          return '<div style="min-width:' + w + ';flex:1;background:#0a0c12;border-radius:8px;padding:12px;border:1px solid #2d3142">' +
+            '<strong style="color:#6c8cff">' + item.model + '</strong>' +
+            '<pre style="white-space:pre-wrap;font-size:.75rem;line-height:1.45;margin-top:8px;color:#b8c0d4;max-height:400px;overflow-y:auto">' + (item.summary || "(aguardando...)") + '</pre></div>';
+        }).join('');
+
+        if (prog.indexOf("Concluido") === 0) {
+          clearInterval(comparePolling);
+          comparePolling = null;
+        }
+      }, 1000);
+    });
+
     loadModels();
     loadPresets();
     loadModelTiers();
@@ -1844,6 +1993,8 @@ class Handler(BaseHTTPRequestHandler):
                 job["chat"] = []
                 job["chat_busy"] = False
                 job["error"] = ""
+                job["compare"] = []
+                job["compare_progress"] = ""
             self._json(200, {"ok": True})
             return
 
@@ -1898,6 +2049,26 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
             threading.Thread(target=run_summarize_job, args=(model,), daemon=True).start()
+            self._json(200, {"ok": True})
+            return
+
+        if path == "/api/compare":
+            data = self._read_json_body()
+            if data is None:
+                self._json(400, {"error": "JSON inválido"})
+                return
+            models = data.get("models") or []
+            if not models or len(models) < 2:
+                self._json(400, {"error": "Selecione pelo menos 2 modelos"})
+                return
+            with job_lock:
+                if job["status"] not in TRANSCRIPTION_READY_STATUSES or not job.get("transcription"):
+                    self._json(400, {"error": "Transcrição não disponível"})
+                    return
+                if job.get("compare_progress", "") and "Concluido" not in job.get("compare_progress", ""):
+                    self._json(409, {"error": "Comparação já em andamento"})
+                    return
+            threading.Thread(target=run_compare_job, args=(models,), daemon=True).start()
             self._json(200, {"ok": True})
             return
 
