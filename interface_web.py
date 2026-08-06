@@ -794,9 +794,6 @@ HTML = """<!DOCTYPE html>
       transition: background .2s;
     }
     .compare-card {
-      flex: 1 1 320px;
-      min-width: 280px;
-      max-width: 480px;
       background: #0a0c12;
       border-radius: 10px;
       padding: 16px;
@@ -883,7 +880,7 @@ HTML = """<!DOCTYPE html>
       <div id="compare-section" style="display:none;margin-top:24px">
         <h3>🔬 Comparação de modelos</h3>
         <div id="compare-progress" class="chat-hint" style="color:#7ddea2;min-height:1.2em"></div>
-        <div id="compare-grid" style="display:flex;flex-wrap:wrap;gap:16px;padding-bottom:8px"></div>
+        <div id="compare-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;padding-bottom:8px"></div>
       </div>
 
       <div id="compare-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
