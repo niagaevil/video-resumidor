@@ -20,7 +20,7 @@ import model_config
 import prompts
 
 PORT = int(os.environ.get("VIDEO_RESUMIDOR_PORT", "8765"))
-UI_VERSION = 6
+UI_VERSION = 7
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(os.environ.get("TEMP", "/tmp"), "video-resumidor-uploads")
 HISTORY_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "video-resumidor")
@@ -701,6 +701,26 @@ HTML = """<!DOCTYPE html>
     }
     .copy-btn:hover { background: #343d5a; color: #e8eaed; }
     .copy-btn.copied { color: #7ddea2; border-color: #7ddea2; }
+    .restore-field-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: transparent;
+      border: 1px solid #3d4258;
+      color: #9aa0b4;
+      font-size: .9rem;
+      cursor: pointer;
+      transition: background .2s, color .2s, border-color .2s;
+      margin-left: 4px;
+      flex-shrink: 0;
+      line-height: 1;
+      padding: 0;
+    }
+    .restore-field-btn:hover { background: #2a3148; color: #7ddea2; border-color: #7ddea2; }
+    .restore-field-btn.restored { color: #7ddea2; border-color: #7ddea2; }
     .toast {
       position: fixed;
       bottom: 24px;
@@ -1512,8 +1532,10 @@ HTML = """<!DOCTYPE html>
           } else {
             badge = ' <span style="color:#5c6378;font-weight:400">(base geral)</span>';
           }
+          const innerLabel = '<span>' + info.label + '</span>' + badge;
           div.innerHTML =
-            '<label class="prompt-label">' + info.label + badge + "</label>" +
+            '<label class="prompt-label">' + innerLabel +
+            '<button type="button" class="restore-field-btn" title="Restaurar padrão" data-prompt="' + key + '">↺</button></label>' +
             '<textarea data-prompt="' + key + '" rows="10"></textarea>' +
             '<div class="hint">' + info.hint + "</div>";
           container.appendChild(div);
@@ -1529,6 +1551,19 @@ HTML = """<!DOCTYPE html>
           // Valor padrão sem override — usado para remover personalizações
           ta.dataset.baseValue = presetDefaults[key] || data[key] || "";
           ta.dataset.presetSource = presetOverrides[key] ? "preset" : (presetDefaults[key] ? "default" : "base");
+
+          // Botão ↺ restaurar padrão
+          const restoreBtn = container.querySelector('.restore-field-btn[data-prompt="' + key + '"]');
+          if (restoreBtn) {
+            restoreBtn.addEventListener("click", () => {
+              ta.value = ta.dataset.baseValue || "";
+              ta.dataset.defaultValue = ta.value;
+              ta.dataset.presetSource = (presetDefaults[key] ? "default" : "base");
+              // Feedback visual
+              restoreBtn.classList.add("restored");
+              setTimeout(() => restoreBtn.classList.remove("restored"), 1200);
+            });
+          }
         });
       } catch (e) {
         container.innerHTML = '<p class="chat-hint">Erro ao carregar prompts.</p>';
