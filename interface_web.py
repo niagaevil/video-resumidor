@@ -914,8 +914,10 @@ HTML = """<!DOCTYPE html>
       <div id="compare-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center">
         <div style="background:#1a1d27;border:1px solid #3d4258;border-radius:16px;padding:28px;max-width:500px;width:90%">
           <h3 style="margin:0 0 8px">Selecionar modelos para comparar</h3>
-          <p class="chat-hint">Escolha 2 ou mais modelos. Cada um gerará um resumo da mesma transcrição.</p>
-          <div id="compare-model-list" style="max-height:260px;overflow-y:auto;margin:12px 0"></div>
+          <p class="chat-hint">Escolha 2 ou mais modelos e o tipo de reunião.</p>
+          <div id="compare-model-list" style="max-height:200px;overflow-y:auto;margin:12px 0;padding:8px;border:1px solid #2d3142;border-radius:8px;background:#12151f"></div>
+          <label for="compare-preset-select" style="color:#9aa0b4;font-size:.85rem;margin-bottom:4px">Tipo de reunião</label>
+          <select id="compare-preset-select" style="margin-bottom:12px"></select>
           <div style="display:flex;gap:8px;justify-content:flex-end">
             <button type="button" class="secondary" id="compare-cancel">Cancelar</button>
             <button type="button" id="compare-start">Iniciar comparação</button>
@@ -1201,6 +1203,7 @@ HTML = """<!DOCTYPE html>
       const res = await fetch("/api/presets");
       const data = await res.json();
       window._presetsData = data.presets || [];  // cache for add/remove
+      window._activePresetId = data.active || "general";  // cache for compare modal
       if (presetSelect) {
         presetSelect.innerHTML = "";
         (data.presets || []).forEach((p) => {
@@ -1959,6 +1962,15 @@ HTML = """<!DOCTYPE html>
         '<input type="checkbox" value="' + m + '" class="compare-check"> ' + m +
         '</label>'
       ).join('');
+
+      // Populate preset selector
+      const presetSel = document.getElementById("compare-preset-select");
+      const presets = window._presetsData || [];
+      presetSel.innerHTML = presets.map((p) => {
+        const sel = (p.id === (window._activePresetId || "general")) ? " selected" : "";
+        return '<option value="' + p.id + '"' + sel + '>' + p.icon + ' ' + p.label + '</option>';
+      }).join('');
+
       compareModal.style.display = "flex";
     });
 
@@ -1973,6 +1985,8 @@ HTML = """<!DOCTYPE html>
         showToast("Selecione pelo menos 2 modelos.");
         return;
       }
+      const comparePreset = document.getElementById("compare-preset-select").value || "general";
+
       compareModal.style.display = "none";
       compareSection.style.display = "block";
       compareGrid.innerHTML = "";
@@ -1981,7 +1995,7 @@ HTML = """<!DOCTYPE html>
       const res = await fetch("/api/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models: models }),
+        body: JSON.stringify({ models: models, preset: comparePreset }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -2257,6 +2271,9 @@ class Handler(BaseHTTPRequestHandler):
             if not models or len(models) < 2:
                 self._json(400, {"error": "Selecione pelo menos 2 modelos"})
                 return
+            preset_id = data.get("preset", "general")
+            # Ativa o preset escolhido antes de rodar a comparação
+            prompts.set_active_preset(preset_id)
             with job_lock:
                 if job["status"] not in TRANSCRIPTION_READY_STATUSES or not job.get("transcription"):
                     self._json(400, {"error": "Transcrição não disponível"})
