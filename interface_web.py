@@ -3,6 +3,7 @@
 import cgi
 import json
 import os
+import re
 import threading
 import uuid
 import webbrowser
@@ -19,7 +20,7 @@ import model_config
 import prompts
 
 PORT = int(os.environ.get("VIDEO_RESUMIDOR_PORT", "8765"))
-UI_VERSION = 5
+UI_VERSION = 6
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(os.environ.get("TEMP", "/tmp"), "video-resumidor-uploads")
 HISTORY_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "video-resumidor")
@@ -877,7 +878,11 @@ HTML = """<!DOCTYPE html>
       <h1>📝 Editar Prompts</h1>
       <p class="sub">Personalize os prompts enviados ao Ollama. Use <code>{variavel}</code> como placeholder.</p>
       <label for="prompts-preset-select">Editar prompts do tipo de reunião</label>
-      <select id="prompts-preset-select" style="margin-bottom:16px"></select>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+        <select id="prompts-preset-select" style="margin-bottom:0;flex:1"></select>
+        <button type="button" id="prompts-add" class="secondary" style="white-space:nowrap;font-size:.85rem;margin-bottom:0;padding:8px 14px">+ Novo tipo</button>
+        <button type="button" id="prompts-remove" class="secondary" style="display:none;white-space:nowrap;font-size:.85rem;margin-bottom:0;padding:8px 14px;border-color:#5c2a2a;color:#ff7b7b">🗑️ Remover</button>
+      </div>
       <div class="prompts-actions">
         <button type="button" id="prompts-save" class="secondary">Salvar alterações</button>
         <button type="button" id="prompts-reset" class="secondary">Restaurar padrões</button>
@@ -1109,6 +1114,7 @@ HTML = """<!DOCTYPE html>
     async function loadPresets() {
       const res = await fetch("/api/presets");
       const data = await res.json();
+      window._presetsData = data.presets || [];  // cache for add/remove
       if (presetSelect) {
         presetSelect.innerHTML = "";
         (data.presets || []).forEach((p) => {
@@ -1130,10 +1136,23 @@ HTML = """<!DOCTYPE html>
           if (p.id === data.active) opt.selected = true;
           promptsPreset.appendChild(opt);
         });
+        updateRemoveButton(data.active, data.presets);
       }
     }
 
-    async function activatePreset(presetId, source) {
+    function updateRemoveButton(activeId, presetsData) {
+      const removeBtn = document.getElementById("prompts-remove");
+      if (!removeBtn) return;
+      const info = (presetsData || window._presetsData || []).find((p) => p.id === activeId);
+      if (info && !info.builtin) {
+        removeBtn.style.display = "inline-block";
+        removeBtn.textContent = "🗑️ Remover \"" + info.label + "\"";
+      } else {
+        removeBtn.style.display = "none";
+      }
+    }
+
+    async function activatePreset(presetId, source, silent) {
       await fetch("/api/presets/activate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1146,7 +1165,8 @@ HTML = """<!DOCTYPE html>
       if (source !== "prompts" && promptsPresetSelect) {
         promptsPresetSelect.value = presetId;
       }
-      showToast("Tipo de reunião: " + presetId);
+      if (!silent) showToast("Tipo de reunião: " + presetId);
+      updateRemoveButton(presetId);
       // Reload prompts editor if open
       if (document.getElementById("panel-prompts").classList.contains("active")) {
         loadPromptsEditor();
@@ -1466,30 +1486,49 @@ HTML = """<!DOCTYPE html>
         const data = await res.json();
         const activePreset = data.active_preset || "general";
         const presets = data.presets || {};
+        const presetDefaults = (data.preset_defaults || {})[activePreset] || {};
         const presetOverrides = presets[activePreset] || {};
+        const overrideKeys = Object.keys(presetOverrides).filter((k) => PROMPT_META[k]);
         const isGeneral = activePreset === "general";
 
         container.innerHTML = "";
+
+        // Aviso: preset ainda sem personalização
+        if (!isGeneral && overrideKeys.length === 0) {
+          const banner = document.createElement("div");
+          banner.style.cssText = "padding:10px 14px;border-radius:8px;background:#161b2e;border:1px solid #2d3142;color:#9aa0b4;font-size:.85rem;margin-bottom:16px;line-height:1.5";
+          banner.innerHTML = "ℹ️ Este tipo de reunião ainda usa os prompts <strong>padrão</strong> (diferentes de outros tipos). Edite abaixo e clique em salvar para personalizar <strong>apenas este tipo</strong>.";
+          container.appendChild(banner);
+        }
+
         Object.entries(PROMPT_META).forEach(([key, info]) => {
           const div = document.createElement("div");
           div.className = "prompt-editor";
-          const overrideLabel = !isGeneral && presetOverrides[key]
-            ? ' <span style="color:#6c8cff;font-weight:400">(personalizado para este preset)</span>'
-            : ' <span style="color:#5c6378;font-weight:400">(fallback base)</span>';
+          let badge;
+          if (presetOverrides[key]) {
+            badge = ' <span style="color:#6c8cff;font-weight:400">(personalizado para este preset)</span>';
+          } else if (presetDefaults[key]) {
+            badge = ' <span style="color:#7ddea2;font-weight:400">(padrão deste tipo de reunião)</span>';
+          } else {
+            badge = ' <span style="color:#5c6378;font-weight:400">(base geral)</span>';
+          }
           div.innerHTML =
-            '<label class="prompt-label">' + info.label + overrideLabel + "</label>" +
+            '<label class="prompt-label">' + info.label + badge + "</label>" +
             '<textarea data-prompt="' + key + '" rows="10"></textarea>' +
             '<div class="hint">' + info.hint + "</div>";
           container.appendChild(div);
         });
-        // Preenche com overrides do preset ou base
+        // Preenche com override do preset, padrão do tipo ou base geral
         Object.entries(PROMPT_META).forEach(([key]) => {
           const ta = container.querySelector('textarea[data-prompt="' + key + '"]');
           if (!ta) return;
-          const value = presetOverrides[key] || data[key] || "";
+          const value = presetOverrides[key] || presetDefaults[key] || data[key] || "";
           ta.value = value;
-          // Data attribute para saber de onde veio
-          ta.dataset.presetSource = presetOverrides[key] ? "preset" : "base";
+          // Valor carregado — usado para detectar o que foi alterado
+          ta.dataset.defaultValue = value;
+          // Valor padrão sem override — usado para remover personalizações
+          ta.dataset.baseValue = presetDefaults[key] || data[key] || "";
+          ta.dataset.presetSource = presetOverrides[key] ? "preset" : (presetDefaults[key] ? "default" : "base");
         });
       } catch (e) {
         container.innerHTML = '<p class="chat-hint">Erro ao carregar prompts.</p>';
@@ -1507,7 +1546,7 @@ HTML = """<!DOCTYPE html>
       activePreset = presetData.active || "general";
 
       if (activePreset === "general") {
-        // Save to top-level prompts
+        // Save to top-level prompts (base geral)
         const payload = {};
         container.querySelectorAll("textarea[data-prompt]").forEach((ta) => {
           payload[ta.dataset.prompt] = ta.value;
@@ -1520,6 +1559,7 @@ HTML = """<!DOCTYPE html>
           });
           if (res.ok) {
             showToast("Prompts salvos com sucesso!");
+            loadPromptsEditor();
           } else {
             const data = await res.json();
             showToast("Erro ao salvar: " + (data.error || "desconhecido"));
@@ -1528,15 +1568,32 @@ HTML = """<!DOCTYPE html>
           showToast("Erro de conexão ao salvar prompts.");
         }
       } else {
-        // Save to preset overrides — need full data first, then merge
+        // Save to preset overrides — salva apenas os campos alterados,
+        // para não congelar todos os prompts do preset de uma vez
         const promptsRes = await fetch("/api/prompts");
         const fullData = await promptsRes.json();
         const presets = fullData.presets || {};
         const override = {};
+        const removals = [];
         container.querySelectorAll("textarea[data-prompt]").forEach((ta) => {
-          override[ta.dataset.prompt] = ta.value;
+          const key = ta.dataset.prompt;
+          const val = ta.value;
+          const loaded = ta.dataset.defaultValue || "";
+          const base = ta.dataset.baseValue || "";
+          if (val === loaded) return; // nada mudou
+          if (ta.dataset.presetSource === "preset" && val === base) {
+            removals.push(key); // voltou ao padrão → remove a personalização
+          } else {
+            override[key] = val;
+          }
         });
-        presets[activePreset] = { ...presets[activePreset], ...override };
+        if (!Object.keys(override).length && !removals.length) {
+          showToast("Nenhuma alteração para salvar neste tipo de reunião.");
+          return;
+        }
+        const presetObj = { ...(presets[activePreset] || {}) };
+        removals.forEach((k) => { delete presetObj[k]; });
+        presets[activePreset] = { ...presetObj, ...override };
         try {
           const res = await fetch("/api/prompts", {
             method: "POST",
@@ -1545,6 +1602,7 @@ HTML = """<!DOCTYPE html>
           });
           if (res.ok) {
             showToast("Prompts do preset salvos com sucesso!");
+            loadPromptsEditor();
           } else {
             const data = await res.json();
             showToast("Erro ao salvar: " + (data.error || "desconhecido"));
@@ -1560,16 +1618,8 @@ HTML = """<!DOCTYPE html>
       try {
         const res = await fetch("/api/prompts/reset", { method: "POST" });
         if (res.ok) {
-          const data = await res.json();
-          const container = document.getElementById("prompts-editors");
-          if (container) {
-            Object.entries(data).forEach(([key, value]) => {
-              if (key === "_meta") return;
-              const ta = container.querySelector('textarea[data-prompt="' + key + '"]');
-              if (ta) ta.value = value;
-            });
-          }
           showToast("Prompts restaurados para os padrões!");
+          loadPromptsEditor();
         } else {
           showToast("Erro ao restaurar prompts.");
         }
@@ -1580,12 +1630,72 @@ HTML = """<!DOCTYPE html>
 
     document.getElementById("prompts-save").addEventListener("click", savePrompts);
     document.getElementById("prompts-reset").addEventListener("click", resetPrompts);
+    document.getElementById("prompts-add").addEventListener("click", addPreset);
+    document.getElementById("prompts-remove").addEventListener("click", removeCurrentPreset);
 
     const promptsPresetSelect = document.getElementById("prompts-preset-select");
     if (promptsPresetSelect) {
       promptsPresetSelect.addEventListener("change", () => {
         activatePreset(promptsPresetSelect.value, "prompts");
       });
+    }
+
+    async function addPreset() {
+      const label = prompt("Nome do novo tipo de reunião:", "");
+      if (!label || !label.trim()) return;
+      const icon = (prompt("Ícone (emoji):", "📝") || "📝").trim();
+      if (!icon) return;
+      try {
+        const res = await fetch("/api/presets/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: label.trim(), icon: icon }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window._presetsData = data.presets || [];
+          await loadPresets();
+          // Ativa o novo preset (silencioso para não duplicar toast)
+          if (data.id) {
+            activatePreset(data.id, "prompts", true);
+            showToast("Novo tipo criado: \"" + label.trim() + "\"!");
+          }
+        } else {
+          showToast("Erro ao criar tipo: " + (data.error || "desconhecido"));
+        }
+      } catch (e) {
+        showToast("Erro de conexão ao criar tipo de reunião.");
+      }
+    }
+
+    async function removeCurrentPreset() {
+      const active = promptsPresetSelect ? promptsPresetSelect.value : "";
+      if (!active) return;
+      const info = (window._presetsData || []).find((p) => p.id === active);
+      if (!info || info.builtin) {
+        showToast("Este tipo de reunião é padrão e não pode ser removido.");
+        return;
+      }
+      if (!confirm("Remover o tipo \"" + info.label + "\"? Seus prompts personalizados serão perdidos.")) return;
+      try {
+        const res = await fetch("/api/presets/remove", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: active }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window._presetsData = data.presets || [];
+          await loadPresets();
+          updateRemoveButton(data.active, data.presets);
+          loadPromptsEditor();
+          showToast("Tipo \"" + info.label + "\" removido.");
+        } else {
+          showToast("Erro ao remover tipo: " + (data.error || "desconhecido"));
+        }
+      } catch (e) {
+        showToast("Erro de conexão ao remover tipo de reunião.");
+      }
     }
 
     async function loadModelTiers() {
@@ -1932,6 +2042,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/prompts":
             data = prompts.get_prompts_meta()
+            data["preset_defaults"] = prompts.get_all_preset_defaults()
             self._json(200, data)
             return
 
@@ -2162,10 +2273,56 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": str(exc)})
             return
 
+        if path == "/api/presets/add":
+            data = self._read_json_body()
+            if data is None:
+                self._json(400, {"error": "JSON inválido"})
+                return
+            preset_id = (data.get("id") or "").strip()
+            label = (data.get("label") or "").strip()
+            icon = (data.get("icon") or "📝").strip()
+            if not preset_id:
+                # Auto-generate from label
+                preset_id = re.sub(r"[^a-z0-9_\-]", "", label.lower().replace(" ", "_").replace("ç", "c").replace("ã", "a").replace("õ", "o").replace("é", "e").replace("á", "a").replace("í", "i").replace("ú", "u")) or "custom"
+                # Ensure unique
+                existing = set(prompts.get_prompts_meta().get("presets", {}).keys()) | set(prompts._BUILTIN_PRESET_IDS)
+                base = preset_id
+                n = 2
+                while preset_id in existing:
+                    preset_id = f"{base}{n}"
+                    n += 1
+            try:
+                prompts.add_preset(preset_id, label, icon)
+                presets_list = prompts.get_presets()
+                active = prompts.get_active_preset()
+                self._json(200, {"ok": True, "id": preset_id, "presets": presets_list, "active": active})
+            except ValueError as exc:
+                self._json(400, {"error": str(exc)})
+            return
+
+        if path == "/api/presets/remove":
+            data = self._read_json_body()
+            if data is None:
+                self._json(400, {"error": "JSON inválido"})
+                return
+            preset_id = (data.get("id") or "").strip()
+            if not preset_id:
+                self._json(400, {"error": "ID do preset obrigatório"})
+                return
+            try:
+                prompts.remove_preset(preset_id)
+                presets_list = prompts.get_presets()
+                active = prompts.get_active_preset()
+                self._json(200, {"ok": True, "presets": presets_list, "active": active})
+            except ValueError as exc:
+                self._json(400, {"error": str(exc)})
+            return
+
         if path == "/api/prompts/reset":
             try:
                 prompts.reset_to_defaults()
                 data = prompts.get_prompts_meta()
+                data["preset_defaults"] = prompts.get_all_preset_defaults()
                 self._json(200, data)
             except Exception as exc:
                 self._json(500, {"error": str(exc)})
