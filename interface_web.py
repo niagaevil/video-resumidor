@@ -2295,7 +2295,8 @@ class Handler(BaseHTTPRequestHandler):
                 if job["status"] not in TRANSCRIPTION_READY_STATUSES or not job.get("transcription"):
                     self._json(400, {"error": "Transcrição não disponível"})
                     return
-                if job.get("compare_progress", "") and "Concluido" not in job.get("compare_progress", ""):
+                cp = job.get("compare_progress", "")
+                if cp and not cp.startswith("Concluido") and not cp.startswith("Carregado") and not cp.startswith("Erro"):
                     self._json(409, {"error": "Comparação já em andamento"})
                     return
             threading.Thread(target=run_compare_job, args=(models,), daemon=True).start()
